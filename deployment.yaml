@@ -1,0 +1,106 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+data:
+  POSTGRES_USER: postgres
+  POSTGRES_PASSWORD: postgres
+  POSTGRES_DB: app_db
+  POSTGRES_HOST: localhost
+  POSTGRES_PORT: "5432"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fullstack-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fullstack-app
+  template:
+    metadata:
+      labels:
+        app: fullstack-app
+    spec:
+      containers:
+        - name: backend
+          image: your-backend-image:latest
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: app-config
+          command: ["/bin/bash", "-c"]
+          args:
+            - uvicorn app.main:app --host 0.0.0.0 --port 8000
+          volumeMounts:
+            - name: shared-code
+              mountPath: /app
+        - name: frontend
+          image: your-frontend-image:latest
+          ports:
+            - containerPort: 5173
+          workingDir: /app
+          command: ["npm", "run", "dev"]
+          volumeMounts:
+            - name: frontend-code
+              mountPath: /app
+        - name: postgres
+          image: postgres:15
+          envFrom:
+            - configMapRef:
+                name: app-config
+          ports:
+            - containerPort: 5432
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+      volumes:
+        - name: shared-code
+          hostPath:
+            path: /mnt/app/app
+        - name: frontend-code
+          hostPath:
+            path: /mnt/app/frontend
+        - name: postgres-data
+          persistentVolumeClaim:
+            claimName: postgres-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-service
+spec:
+  selector:
+    app: fullstack-app
+  ports:
+    - port: 8000
+      targetPort: 8000
+      nodePort: 30080
+  type: NodePort
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-service
+spec:
+  selector:
+    app: fullstack-app
+  ports:
+    - port: 5173
+      targetPort: 5173
+      nodePort: 30517
+  type: NodePort
